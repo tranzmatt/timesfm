@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,23 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""TimesFM API."""
+"""TimesFM3 MLX (Apple Silicon) backend."""
 
-from .configs import ForecastConfig
+from .configs import TimesFM3MlxConfig
+from .model import TimesFM3Mlx
+from .timesfm3_forecaster import (
+  ForecastOutput,
+  ModelConfig,
+  TimesFM3Forecaster,
+  _ModelConfig,
+)
 
-try:
-  from .timesfm_2p5 import timesfm_2p5_torch
-  TimesFM_2p5_200M_torch = timesfm_2p5_torch.TimesFM_2p5_200M_torch
-except ImportError:
-  pass
-
-try:
-  from .timesfm_2p5 import timesfm_2p5_flax
-  TimesFM_2p5_200M_flax = timesfm_2p5_flax.TimesFM_2p5_200M_flax
-except ImportError:
-  pass
-
-try:
-  from timesfm3 import TimesFM3Forecaster, TimesFM3Torch
-except ImportError:
-  pass
+__all__ = [
+  "ForecastOutput",
+  "ModelConfig",
+  "TimesFM3Forecaster",
+  "TimesFM3Mlx",
+  "TimesFM3MlxConfig",
+  "_ModelConfig",
+]

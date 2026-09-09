@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,23 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""TimesFM API."""
+"""Backward-compatibility shim for ``timesfm3.normalization``.
 
-from .configs import ForecastConfig
+The PyTorch backend moved to ``timesfm3.torch.normalization``. This re-exports it so that
+existing ``from timesfm3.normalization import ...`` imports keep working; new code should
+import from ``timesfm3.torch.normalization`` (or the top-level ``timesfm3`` API).
+"""
 
-try:
-  from .timesfm_2p5 import timesfm_2p5_torch
-  TimesFM_2p5_200M_torch = timesfm_2p5_torch.TimesFM_2p5_200M_torch
-except ImportError:
-  pass
-
-try:
-  from .timesfm_2p5 import timesfm_2p5_flax
-  TimesFM_2p5_200M_flax = timesfm_2p5_flax.TimesFM_2p5_200M_flax
-except ImportError:
-  pass
-
-try:
-  from timesfm3 import TimesFM3Forecaster, TimesFM3Torch
-except ImportError:
-  pass
+from .torch.normalization import *  # noqa: F401,F403
