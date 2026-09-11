@@ -14,20 +14,24 @@
 
 """TimesFM3 MLX (Apple Silicon) backend."""
 
-from .configs import TimesFM3MlxConfig
-from .model import TimesFM3Mlx
-from .timesfm3_forecaster import (
-  ForecastOutput,
-  ModelConfig,
-  TimesFM3Forecaster,
-  _ModelConfig,
-)
+try:
+  from .configs import TimesFM3MlxConfig
+  from .model import TimesFM3Mlx
+  from .timesfm3_forecaster import (
+    ForecastOutput,
+    ModelConfig,
+    TimesFM3Forecaster,
+    _ModelConfig,
+  )
 
-__all__ = [
-  "ForecastOutput",
-  "ModelConfig",
-  "TimesFM3Forecaster",
-  "TimesFM3Mlx",
-  "TimesFM3MlxConfig",
-  "_ModelConfig",
-]
+  __all__ = [
+    "ForecastOutput",
+    "ModelConfig",
+    "TimesFM3Forecaster",
+    "TimesFM3Mlx",
+    "TimesFM3MlxConfig",
+    "_ModelConfig",
+  ]
+except ImportError:
+  # MLX is only supported on Apple Silicon (macOS).
+  __all__ = []
