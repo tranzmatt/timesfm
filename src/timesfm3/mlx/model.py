@@ -43,7 +43,11 @@ class TimesFM3Mlx(nn.Module):
     cfg = config or configs.TimesFM3MlxConfig()
     self.config = cfg
     self.pre_transformer_resblock = ResidualBlock(
-      2 * (cfg.input_patch_len + cfg.output_patch_len), cfg.model_dims
+      2 * (cfg.input_patch_len + cfg.output_patch_len),
+      cfg.model_dims,
+      activation=cfg.residual_activation,
+      prenorm=cfg.residual_prenorm,
+      identity_skip=cfg.residual_identity_skip,
     )
     self.transformer_stack = transformer.StackedMixingTransformer(cfg)
     self.output_head = nn.Linear(
@@ -56,6 +60,8 @@ class TimesFM3Mlx(nn.Module):
   # ---- full-sequence forward over patched inputs (target-only path) ----
   def _forward_logits(self, values, masks, patch_is_target, patch_cpm_mask=None):
     cfg = self.config
+    values = mx.where(mx.isnan(values), 0.0, values)
+    values = mx.clip(values, -cfg.value_clip, cfg.value_clip)
     running_n, mu, sigma = util.get_running_stats(values, masks)
     vals_norm = util.revin(values, mu, sigma)
     vals_norm = mx.where(masks, 0.0, vals_norm)
@@ -74,7 +80,7 @@ class TimesFM3Mlx(nn.Module):
     )  # mask leading patches only
     x = self.transformer_stack(x, eff)
     raw = self.output_head(x).astype(mx.float32)
-    if patch_cpm_mask is not None:
+    if patch_cpm_mask is not None and cfg.use_iterative_cpm_revin:
       ref_mu, ref_sigma = cpm_revin_refine_lib.cpm_iterative_revin_refine(
         raw,
         running_n,
@@ -176,12 +182,17 @@ class TimesFM3Mlx(nn.Module):
     context = context + ctx_pad
     num_ctx_patches = context // p
 
-    extract_len = min(2 * p, cfg.output_patch_len)
-    overlap = extract_len - p
-    num_forecast_patches = max(math.ceil((horizon - overlap) / p), 1)
-    num_hor_patches = num_forecast_patches + cfg.rolls - 1
-    padded_h = num_hor_patches * p
-    hor_pad = padded_h - horizon
+    if cfg.use_stitching:
+      extract_len = min(2 * p, cfg.output_patch_len)
+      overlap = extract_len - p
+      num_forecast_patches = max(math.ceil((horizon - overlap) / p), 1)
+      num_hor_patches = num_forecast_patches + cfg.rolls - 1
+      padded_h = num_hor_patches * p
+      hor_pad = padded_h - horizon
+    else:
+      hor_pad = (-horizon) % cfg.output_patch_len
+      padded_h = horizon + hor_pad
+      num_hor_patches = padded_h // p
 
     # 2. Stack targets + covariates on the variate axis.
     if target_mask is None:
@@ -274,9 +285,17 @@ class TimesFM3Mlx(nn.Module):
     )
     logits = self._forward_fn()(values_bvnp, masks_bvnp, patch_is_target, horizon_cpm)
 
-    fidx = mx.arange(num_forecast_patches) + (num_ctx_patches - 1)
-    patch_preds = mx.take(logits, fidx, axis=2)[:, :, :, :extract_len, :]
-    horizon_logits = util.stitch_patches(patch_preds, p)[:, :, :horizon, :]
+    if cfg.use_stitching:
+      fidx = mx.arange(num_forecast_patches) + (num_ctx_patches - 1)
+      patch_preds = mx.take(logits, fidx, axis=2)[:, :, :, :extract_len, :]
+      horizon_logits = util.stitch_patches(patch_preds, p)[:, :, :horizon, :]
+    else:
+      num_forecast_chunks = padded_h // cfg.output_patch_len
+      fidx = mx.arange(num_forecast_chunks) * cfg.rolls + (num_ctx_patches - 1)
+      forecast_logits = mx.take(logits, fidx, axis=2)
+      horizon_logits = forecast_logits.reshape(b, num_variates, -1, cfg.num_quantiles)[
+        :, :, :horizon, :
+      ]
 
     if cfg.use_linear_detrending:
       tf = mx.arange(1, horizon + 1).astype(mx.float32) / context

@@ -41,10 +41,24 @@ _CHECKPOINT = "google/timesfm-3.0-pytorch"
 
 def _weights_cached() -> bool:
   try:
-    from huggingface_hub import try_to_load_from_cache
+    from huggingface_hub import constants, try_to_load_from_cache
 
     path = try_to_load_from_cache(_CHECKPOINT, "model.safetensors")
-    return isinstance(path, str) and os.path.exists(path)
+    if isinstance(path, str) and os.path.exists(path):
+      return True
+    # try_to_load_from_cache resolves refs/main, which can advance (e.g. on an unrelated README
+    # edit on the Hub) past the snapshot that actually has model.safetensors symlinked, making it
+    # report "not cached" even though an earlier snapshot has the full weights on disk. Fall back
+    # to checking every cached snapshot directly.
+    repo_dir = os.path.join(
+      constants.HF_HUB_CACHE, f"models--{_CHECKPOINT.replace('/', '--')}", "snapshots"
+    )
+    if not os.path.isdir(repo_dir):
+      return False
+    return any(
+      os.path.exists(os.path.join(repo_dir, snapshot, "model.safetensors"))
+      for snapshot in os.listdir(repo_dir)
+    )
   except Exception:
     return False
 
