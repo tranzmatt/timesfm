@@ -40,6 +40,16 @@ class TimesFM3MlxConfig:
   use_linear_detrending: bool = True
   linear_detrending_threshold: float = 0.5
   value_clip: float = 1e20
+  use_iterative_cpm_revin: bool = True
+  residual_activation: str = "relu"
+  residual_prenorm: str = "none"
+  residual_identity_skip: bool = False
+  ff_activation: str = "relu"
+  v_norm: str = "none"
+  causal_attention: bool = True
+  use_rope_seq: bool = True
+  use_rope_var: bool = False
+  use_memory_efficient_attention: bool = True
 
   @property
   def head_dim(self) -> int:
@@ -67,6 +77,7 @@ class TimesFM3MlxConfig:
       )
     transformer = cfg.get("transformer_config", {})
     inner = transformer.get("transformer", {})
+    resblock = cfg.get("residual_block_config", {})
     return cls(
       input_patch_len=cfg.get("input_patch_len", 32),
       output_patch_len=cfg.get("output_patch_len", 64),
@@ -80,4 +91,14 @@ class TimesFM3MlxConfig:
       use_linear_detrending=cfg.get("use_linear_detrending", True),
       linear_detrending_threshold=cfg.get("linear_detrending_threshold", 0.5),
       value_clip=cfg.get("value_clip", 1e20),
+      use_iterative_cpm_revin=cfg.get("use_iterative_cpm_revin", True),
+      residual_activation=resblock.get("activation", "relu"),
+      residual_prenorm=resblock.get("prenorm", "none"),
+      residual_identity_skip=resblock.get("identity_skip", False),
+      ff_activation=inner.get("ff_activation", "relu"),
+      v_norm=inner.get("v_norm", "none"),
+      causal_attention=inner.get("causal_attention", True),
+      use_rope_seq=inner.get("use_rope_seq", True),
+      use_rope_var=inner.get("use_rope_var", False),
+      use_memory_efficient_attention=inner.get("use_memory_efficient_attention", True),
     )

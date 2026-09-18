@@ -25,7 +25,14 @@ import math
 import mlx.core as mx
 import mlx.nn as nn
 
-from . import configs, normalization
+from . import configs, normalization, util
+
+_ACTIVATIONS = {
+  "relu": nn.relu,
+  "swish": nn.silu,
+  "silu": nn.silu,
+  "none": lambda x: x,
+}
 
 
 def rope(
@@ -49,8 +56,9 @@ def rope(
 class MultiHeadAttention(nn.Module):
   """Multi-head attention with RoPE, per-head QK RMSNorm and PerDimScale.
 
-  ``rescale_logits`` is False (memory-efficient-attention parity): the query is pre-multiplied by
+  When ``cfg.use_memory_efficient_attention`` (the default), the query is pre-multiplied by
   ``sqrt(head_dim)`` with no internal division, so the net logit scale is ``sqrt(head_dim)``.
+  Otherwise the net scale is ``1.0``, matching torch's ``rescale_logits=True`` path.
   """
 
   def __init__(self, cfg: configs.TimesFM3MlxConfig, use_rope: bool, causal: bool):
@@ -67,12 +75,15 @@ class MultiHeadAttention(nn.Module):
     self.query_ln = normalization.RMSNorm(self.head_dim)
     self.key_ln = normalization.RMSNorm(self.head_dim)
     self.per_dim_scale = normalization.PerDimScale(self.head_dim)
+    self.v_norm = cfg.v_norm
+    self.qk_scale = math.sqrt(self.head_dim) if cfg.use_memory_efficient_attention else 1.0
 
   def __call__(self, x: mx.array, patch_mask: mx.array) -> mx.array:
     b, n, _ = x.shape
     # Single-position attention (variate attention over one variate): softmax over a single key is
-    # exactly 1, so the output equals the value projection. Skip Q/K/RoPE/norms/softmax.
-    if n == 1:
+    # exactly 1, so the output equals the value projection (still needs v_norm applied). Skip
+    # Q/K/RoPE/norms/softmax.
+    if n == 1 and self.v_norm != "rms":
       return self.out_proj(self.value_proj(x))
     h, hd = self.num_heads, self.head_dim
     q = self.query_proj(x).reshape(b, n, h, hd)
@@ -85,6 +96,10 @@ class MultiHeadAttention(nn.Module):
     q = self.query_ln(q)
     k = self.key_ln(k)
     q = self.per_dim_scale(q)
+    if self.v_norm == "rms":
+      v = util.rms_norm(v, None)
+    if n == 1:
+      return self.out_proj(v.reshape(b, n, h * hd))
     q = q.transpose(0, 2, 1, 3)
     k = k.transpose(0, 2, 1, 3)
     v = v.transpose(0, 2, 1, 3)
@@ -96,7 +111,7 @@ class MultiHeadAttention(nn.Module):
     else:
       attend = mx.broadcast_to(kv_valid, (b, 1, n, n))
     bias = mx.where(attend, 0.0, -1e9)
-    q = q * math.sqrt(hd)
+    q = q * self.qk_scale
     logits = (q @ k.transpose(0, 1, 3, 2)) + bias
     w = mx.softmax(logits, axis=-1)
     out = w @ v
@@ -112,16 +127,17 @@ class MixingTransformer(nn.Module):
     d = cfg.model_dims
     self.pre_seq_attn_ln = normalization.RMSNorm(d)
     self.post_seq_attn_ln = normalization.RMSNorm(d)
-    self.seq_attn = MultiHeadAttention(cfg, use_rope=True, causal=True)
+    self.seq_attn = MultiHeadAttention(cfg, use_rope=cfg.use_rope_seq, causal=cfg.causal_attention)
     self.use_var = cfg.use_variate_attention
     if self.use_var:
       self.pre_var_attn_ln = normalization.RMSNorm(d)
       self.post_var_attn_ln = normalization.RMSNorm(d)
-      self.var_attn = MultiHeadAttention(cfg, use_rope=False, causal=False)
+      self.var_attn = MultiHeadAttention(cfg, use_rope=cfg.use_rope_var, causal=False)
     self.pre_ff_ln = normalization.RMSNorm(d)
     self.post_ff_ln = normalization.RMSNorm(d)
     self.ff0 = nn.Linear(d, cfg.hidden_dims, bias=False)
     self.ff1 = nn.Linear(cfg.hidden_dims, d, bias=False)
+    self.ff_activation = _ACTIVATIONS[cfg.ff_activation]
 
   def __call__(self, x: mx.array, patch_mask: mx.array) -> mx.array:
     b, v, n, d = x.shape
@@ -137,7 +153,7 @@ class MixingTransformer(nn.Module):
       h2 = self.post_var_attn_ln(va) + h1
     else:
       h2 = h1
-    ff = self.ff1(nn.relu(self.ff0(self.pre_ff_ln(h2))))
+    ff = self.ff1(self.ff_activation(self.ff0(self.pre_ff_ln(h2))))
     return self.post_ff_ln(ff) + h2
 
 
