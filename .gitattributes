@@ -1,3 +1,4 @@
-# Git LFS tracking for binary outputs in timesfm-forecasting skill
-timesfm-forecasting/**/*.png filter=lfs diff=lfs merge=lfs -text
-timesfm-forecasting/**/*.gif filter=lfs diff=lfs merge=lfs -text
+# Binary outputs in the timesfm-forecasting skill — no diff/merge munging.
+# (Not stored in Git LFS: the repo has no LFS objects and these files are small.)
+timesfm-forecasting/**/*.png binary
+timesfm-forecasting/**/*.gif binary

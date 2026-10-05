@@ -34,7 +34,17 @@ _TORCH_EXPORTS = frozenset(
   }
 )
 
-__all__ = sorted(_TORCH_EXPORTS)
+__all__ = [
+  "ForecastOutput",
+  "ModelConfig",
+  "ResidualBlockConfig",
+  "StackedTransformersConfig",
+  "TimesFM3Evaluator",
+  "TimesFM3Forecaster",
+  "TimesFM3Torch",
+  "TransformerConfig",
+  "_ModelConfig",
+]
 
 
 def __getattr__(name):  # PEP 562: lazily re-export the torch backend at the top level
